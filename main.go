@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
-	"regexp"
+	"os"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Token structure
@@ -17,45 +18,47 @@ type Token struct {
 func lexer(input string) []Token {
 	var tokens []Token
 	cursor := 0
+	length := len(input)
 
-	for cursor < len(input) {
-		char := string(input[cursor])
+	for cursor < length {
+		char := rune(input[cursor])
 
 		// Skip whitespace
-		if match, _ := regexp.MatchString(`\s`, char); match {
+		if unicode.IsSpace(char) {
 			cursor++
 			continue
 		}
 
 		// Check for characters
-		if match, _ := regexp.MatchString(`[a-zA-Z]`, char); match {
-			word := ""
-			for cursor < len(input) && regexp.MustCompile(`[a-zA-Z]`).MatchString(string(input[cursor])) {
-				word += string(input[cursor])
+		if unicode.IsLetter(char) {
+			start := cursor
+			for cursor < length && unicode.IsLetter(rune(input[cursor])) {
 				cursor++
 			}
-			if word == "ye" || word == "bol" || word == "agar" || word == "warna" || word == "jabtak" || word == "switch" || word == "case" || word == "default" || word == "array" || word == "file" {
+			word := input[start:cursor]
+			switch word {
+			case "ye", "bol", "agar", "warna", "jabtak", "switch", "case", "default", "array", "file":
 				tokens = append(tokens, Token{Type: "keyword", Value: word})
-			} else {
+			default:
 				tokens = append(tokens, Token{Type: "identifier", Value: word})
 			}
 			continue
 		}
 
 		// Check for numbers
-		if match, _ := regexp.MatchString(`[0-9]`, char); match {
-			number := ""
-			for cursor < len(input) && regexp.MustCompile(`[0-9]`).MatchString(string(input[cursor])) {
-				number += string(input[cursor])
+		if unicode.IsDigit(char) {
+			start := cursor
+			for cursor < length && unicode.IsDigit(rune(input[cursor])) {
 				cursor++
 			}
+			number := input[start:cursor]
 			tokens = append(tokens, Token{Type: "number", Value: number})
 			continue
 		}
 
 		// Tokenize operators and equals sign
-		if match, _ := regexp.MatchString(`[\+\-\*\/=<>]`, char); match {
-			tokens = append(tokens, Token{Type: "operator", Value: char})
+		if strings.ContainsRune("+-*/=<>", char) {
+			tokens = append(tokens, Token{Type: "operator", Value: string(char)})
 			cursor++
 			continue
 		}
@@ -418,17 +421,90 @@ file read "test.txt"
 		case Declaration:
 			variables[n.Name] = n.Value
 		case Print:
-			fmt.Println("Output:", evaluateExpression(n.Expression, variables)) // Print evaluated result
+			fmt.Println("Output:", n.Expression) // Print the expression directly
 		case Conditional:
 			// Handle conditional statements
+			condition := evaluateExpression(n.Condition, variables)
+			if condition != 0 {
+				executeNodes(n.Body, variables)
+			} else {
+				executeNodes(n.ElseBody, variables)
+			}
 		case Loop:
 			// Handle loops
+			for evaluateExpression(n.Condition, variables) != 0 {
+				executeNodes(n.Body, variables)
+			}
 		case SwitchCase:
 			// Handle switch cases
+			expression := evaluateExpression(n.Expression, variables)
+			executed := false
+			for caseValue, caseBody := range n.Cases {
+				if evaluateExpression(caseValue, variables) == expression {
+					executeNodes(caseBody, variables)
+					executed = true
+					break
+				}
+			}
+			if !executed {
+				executeNodes(n.Default, variables)
+			}
 		case Array:
 			// Handle arrays
+			fmt.Printf("Array %s: %v\n", n.Name, n.Values)
 		case FileOperation:
 			// Handle file operations
+			if n.Operation == "write" {
+				os.WriteFile(n.Filename, []byte(n.Content), 0644)
+			} else if n.Operation == "read" {
+				content, _ := os.ReadFile(n.Filename)
+				fmt.Println("File content:", string(content))
+			}
+		}
+	}
+}
+
+// Helper function to execute a list of nodes
+func executeNodes(nodes []Node, variables map[string]int) {
+	for _, node := range nodes {
+		switch n := node.(type) {
+		case Declaration:
+			variables[n.Name] = n.Value
+		case Print:
+			fmt.Println("Output:", n.Expression) // Print the expression directly
+		case Conditional:
+			condition := evaluateExpression(n.Condition, variables)
+			if condition != 0 {
+				executeNodes(n.Body, variables)
+			} else {
+				executeNodes(n.ElseBody, variables)
+			}
+		case Loop:
+			for evaluateExpression(n.Condition, variables) != 0 {
+				executeNodes(n.Body, variables)
+			}
+		case SwitchCase:
+			expression := evaluateExpression(n.Expression, variables)
+			executed := false
+			for caseValue, caseBody := range n.Cases {
+				if evaluateExpression(caseValue, variables) == expression {
+					executeNodes(caseBody, variables)
+					executed = true
+					break
+				}
+			}
+			if !executed {
+				executeNodes(n.Default, variables)
+			}
+		case Array:
+			fmt.Printf("Array %s: %v\n", n.Name, n.Values)
+		case FileOperation:
+			if n.Operation == "write" {
+				os.WriteFile(n.Filename, []byte(n.Content), 0644)
+			} else if n.Operation == "read" {
+				content, _ := os.ReadFile(n.Filename)
+				fmt.Println("File content:", string(content))
+			}
 		}
 	}
 }
